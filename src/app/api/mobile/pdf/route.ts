@@ -16,12 +16,16 @@ export async function GET(req: NextRequest) {
     }
 
     const bytes = await response.Body.transformToByteArray();
+    const body = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    );
 
-    return new NextResponse(bytes, {
+    return new NextResponse(body, {
       status: 200,
       headers: {
         "Content-Type": response.ContentType || "application/pdf",
-        "Content-Length": String(bytes.length),
+        "Content-Length": String(bytes.byteLength),
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "public, max-age=3600",
       },
