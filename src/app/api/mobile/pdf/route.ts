@@ -16,11 +16,8 @@ export async function GET(req: NextRequest) {
     }
 
     const bytes = await response.Body.transformToByteArray();
-    const body = new Blob([bytes], {
-      type: response.ContentType || "application/pdf",
-    });
 
-    return new NextResponse(body, {
+    return new NextResponse(bytes as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": response.ContentType || "application/pdf",
