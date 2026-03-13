@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { uploadToR2, deleteFromR2 } from "@/lib/r2";
+import { revalidatePath } from "next/cache";
 
 // ─── BLOCKS ───────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ export async function createBlock(name: string, year: number) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
   return data;
 }
 
@@ -33,12 +35,14 @@ export async function updateBlock(id: string, name: string, year: number) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
   return data;
 }
 
 export async function deleteBlock(id: string) {
   const { error } = await supabaseAdmin.from("blocks").delete().eq("id", id);
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
 }
 
 // ─── SUBJECTS ─────────────────────────────────────────────
@@ -59,6 +63,7 @@ export async function createSubject(name: string, blockId: string) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
   return data;
 }
 
@@ -70,12 +75,14 @@ export async function updateSubject(id: string, name: string, blockId: string) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
   return data;
 }
 
 export async function deleteSubject(id: string) {
   const { error } = await supabaseAdmin.from("subjects").delete().eq("id", id);
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
 }
 
 // ─── CHAPTERS ─────────────────────────────────────────────
@@ -100,6 +107,7 @@ export async function createChapter(
     .select()
     .single();
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
   return data;
 }
 
@@ -116,12 +124,14 @@ export async function updateChapter(
     .select()
     .single();
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
   return data;
 }
 
 export async function deleteChapter(id: string) {
   const { error } = await supabaseAdmin.from("chapters").delete().eq("id", id);
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
 }
 
 // ─── NOTES ────────────────────────────────────────────────
@@ -171,6 +181,7 @@ export async function uploadNote(formData: FormData) {
     .single();
 
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
   return data;
 }
 
@@ -215,6 +226,7 @@ export async function replaceNote(noteId: string, formData: FormData) {
     .single();
 
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
   return data;
 }
 
@@ -236,6 +248,7 @@ export async function deleteNote(id: string) {
 
   const { error } = await supabaseAdmin.from("notes").delete().eq("id", id);
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
 }
 
 // ─── USERS ────────────────────────────────────────────────
@@ -297,6 +310,7 @@ export async function createUser(userData: {
         : "No blocks",
   });
 
+  revalidatePath("/", "layout");
   return user;
 }
 
@@ -340,12 +354,14 @@ export async function updateUser(
     await supabaseAdmin.from("user_blocks").insert(rows);
   }
 
+  revalidatePath("/", "layout");
   return user;
 }
 
 export async function deleteUser(id: string) {
   const { error } = await supabaseAdmin.from("users").delete().eq("id", id);
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
 }
 
 export async function toggleUserStatus(id: string) {
@@ -372,6 +388,7 @@ export async function toggleUserStatus(id: string) {
     course_block: "",
   });
 
+  revalidatePath("/", "layout");
   return data;
 }
 
@@ -381,6 +398,7 @@ export async function removeUserDevice(userId: string) {
     .delete()
     .eq("user_id", userId);
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────
