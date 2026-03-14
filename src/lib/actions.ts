@@ -4,6 +4,22 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { uploadToR2, deleteFromR2 } from "@/lib/r2";
 import { revalidatePath } from "next/cache";
 
+async function safeLogActivity(params: {
+  user_name: string;
+  action: string;
+  course_block?: string;
+}) {
+  try {
+    await supabaseAdmin.from("activity_log").insert({
+      user_name: params.user_name,
+      action: params.action,
+      course_block: params.course_block ?? "",
+    });
+  } catch {
+    // activity logging must never break core admin actions
+  }
+}
+
 // ─── BLOCKS ───────────────────────────────────────────────
 
 export async function getBlocks() {
@@ -23,6 +39,13 @@ export async function createBlock(name: string, year: number) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Block created",
+    course_block: `${name} (Year ${year})`,
+  });
+
   revalidatePath("/", "layout");
   return data;
 }
@@ -35,6 +58,13 @@ export async function updateBlock(id: string, name: string, year: number) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Block updated",
+    course_block: `${name} (Year ${year})`,
+  });
+
   revalidatePath("/", "layout");
   return data;
 }
@@ -42,6 +72,13 @@ export async function updateBlock(id: string, name: string, year: number) {
 export async function deleteBlock(id: string) {
   const { error } = await supabaseAdmin.from("blocks").delete().eq("id", id);
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Block deleted",
+    course_block: id,
+  });
+
   revalidatePath("/", "layout");
 }
 
@@ -63,6 +100,13 @@ export async function createSubject(name: string, blockId: string) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Subject created",
+    course_block: name,
+  });
+
   revalidatePath("/", "layout");
   return data;
 }
@@ -75,6 +119,13 @@ export async function updateSubject(id: string, name: string, blockId: string) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Subject updated",
+    course_block: name,
+  });
+
   revalidatePath("/", "layout");
   return data;
 }
@@ -82,6 +133,13 @@ export async function updateSubject(id: string, name: string, blockId: string) {
 export async function deleteSubject(id: string) {
   const { error } = await supabaseAdmin.from("subjects").delete().eq("id", id);
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Subject deleted",
+    course_block: id,
+  });
+
   revalidatePath("/", "layout");
 }
 
@@ -107,6 +165,13 @@ export async function createChapter(
     .select()
     .single();
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Chapter created",
+    course_block: name,
+  });
+
   revalidatePath("/", "layout");
   return data;
 }
@@ -124,6 +189,13 @@ export async function updateChapter(
     .select()
     .single();
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Chapter updated",
+    course_block: name,
+  });
+
   revalidatePath("/", "layout");
   return data;
 }
@@ -131,6 +203,13 @@ export async function updateChapter(
 export async function deleteChapter(id: string) {
   const { error } = await supabaseAdmin.from("chapters").delete().eq("id", id);
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Chapter deleted",
+    course_block: id,
+  });
+
   revalidatePath("/", "layout");
 }
 
@@ -181,6 +260,13 @@ export async function uploadNote(formData: FormData) {
     .single();
 
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Note uploaded",
+    course_block: `${blockId} • ${file.name}`,
+  });
+
   revalidatePath("/", "layout");
   return data;
 }
@@ -226,6 +312,13 @@ export async function replaceNote(noteId: string, formData: FormData) {
     .single();
 
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Note replaced",
+    course_block: `${existing?.block_id ?? ""} • ${file.name}`,
+  });
+
   revalidatePath("/", "layout");
   return data;
 }
@@ -248,6 +341,13 @@ export async function deleteNote(id: string) {
 
   const { error } = await supabaseAdmin.from("notes").delete().eq("id", id);
   if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Note deleted",
+    course_block: id,
+  });
+
   revalidatePath("/", "layout");
 }
 

@@ -59,8 +59,9 @@ export async function GET() {
       },
       {
         headers: {
-          // Cache at Vercel edge for 5 minutes; stale-while-revalidate for 10 minutes
-          "Cache-Control": "s-maxage=300, stale-while-revalidate=600",
+          // Mobile needs near-instant updates when admin uploads/edits content.
+          // Avoid edge caching so refreshes reflect DB changes immediately.
+          "Cache-Control": "no-store",
         },
       },
     );
