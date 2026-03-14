@@ -1,12 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Pencil, Trash2, FileText } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  FileText,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import type { Chapter, ChapterFormData, Block, Subject } from "@/types";
 import PageHeader from "@/components/ui/PageHeader";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import Modal from "@/components/ui/Modal";
-import { createChapter, updateChapter, deleteChapter } from "@/lib/actions";
+import {
+  createChapter,
+  updateChapter,
+  deleteChapter,
+  moveChapter,
+} from "@/lib/actions";
 
 const fieldCls =
   "w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors";
@@ -35,6 +47,7 @@ export default function ChaptersClient({
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   const filteredSubjects = subjectList.filter(
     (s) => s.blockId === form.blockId,
@@ -94,6 +107,7 @@ export default function ChaptersClient({
             subjectName: subject?.name ?? "",
             blockId: form.blockId,
             blockName: block?.name ?? "",
+            sortOrder: created.sort_order ?? 0,
           },
           ...prev,
         ]);
@@ -121,6 +135,66 @@ export default function ChaptersClient({
       c.subjectName.toLowerCase().includes(search.toLowerCase()) ||
       c.blockName.toLowerCase().includes(search.toLowerCase()),
   );
+
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    // Group by subject so ordering controls make sense
+    if (a.blockName !== b.blockName) return a.blockName.localeCompare(b.blockName);
+    if (a.subjectName !== b.subjectName) return a.subjectName.localeCompare(b.subjectName);
+    const ao = a.sortOrder ?? 0;
+    const bo = b.sortOrder ?? 0;
+    if (ao !== bo) return ao - bo;
+    return a.name.localeCompare(b.name);
+  });
+
+  const getSubjectOrdered = (subjectId: string) =>
+    chapterList
+      .filter((c) => c.subjectId === subjectId)
+      .slice()
+      .sort((a, b) => {
+        const ao = a.sortOrder ?? 0;
+        const bo = b.sortOrder ?? 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+      });
+
+  const handleMove = async (chapterId: string, direction: "up" | "down") => {
+    const current = chapterList.find((c) => c.id === chapterId);
+    if (!current) return;
+
+    const ordered = getSubjectOrdered(current.subjectId);
+    const idx = ordered.findIndex((c) => c.id === chapterId);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= ordered.length) return;
+
+    const neighbor = ordered[swapIdx];
+    if (!neighbor) return;
+
+    // Optimistic swap
+    setChapterList((prev) =>
+      prev.map((c) => {
+        if (c.id === current.id) return { ...c, sortOrder: neighbor.sortOrder };
+        if (c.id === neighbor.id) return { ...c, sortOrder: current.sortOrder };
+        return c;
+      }),
+    );
+
+    setMovingId(chapterId);
+    try {
+      await moveChapter(chapterId, direction);
+    } catch (err) {
+      console.error(err);
+      // Best-effort rollback
+      setChapterList((prev) =>
+        prev.map((c) => {
+          if (c.id === current.id) return { ...c, sortOrder: current.sortOrder };
+          if (c.id === neighbor.id) return { ...c, sortOrder: neighbor.sortOrder };
+          return c;
+        }),
+      );
+    } finally {
+      setMovingId(null);
+    }
+  };
 
   return (
     <div>
@@ -162,7 +236,13 @@ export default function ChaptersClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((c) => (
+              {sortedFiltered.map((c) => {
+                const ordered = getSubjectOrdered(c.subjectId);
+                const idx = ordered.findIndex((x) => x.id === c.id);
+                const canUp = idx > 0;
+                const canDown = idx >= 0 && idx < ordered.length - 1;
+
+                return (
                 <tr
                   key={c.id}
                   className="hover:bg-muted-hover transition-colors"
@@ -184,6 +264,24 @@ export default function ChaptersClient({
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-1">
                       <button
+                        onClick={() => handleMove(c.id, "up")}
+                        disabled={!canUp || movingId === c.id}
+                        className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
+                        title="Move up"
+                        aria-label="Move up"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleMove(c.id, "down")}
+                        disabled={!canDown || movingId === c.id}
+                        className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
+                        title="Move down"
+                        aria-label="Move down"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
                         onClick={() => openEdit(c)}
                         className="p-1.5 rounded-md text-muted-foreground hover:bg-primary-light hover:text-primary transition-colors"
                       >
@@ -198,7 +296,8 @@ export default function ChaptersClient({
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {filtered.length === 0 && (
                 <tr>
                   <td

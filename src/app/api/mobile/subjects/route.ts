@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
         .from("subjects")
         .select("*")
         .eq("block_id", blockId)
+        .order("sort_order")
         .order("name"),
     ]);
 

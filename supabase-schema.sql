@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS subjects (
   id         UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name       TEXT NOT NULL,
   block_id   UUID NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+  sort_order INT  NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS chapters (
   name       TEXT NOT NULL,
   subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
   block_id   UUID NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+  sort_order INT  NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -84,8 +86,10 @@ CREATE TABLE IF NOT EXISTS activity_log (
 
 -- ─── INDEXES ──────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_subjects_block   ON subjects(block_id);
+CREATE INDEX IF NOT EXISTS idx_subjects_sort    ON subjects(block_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_chapters_subject ON chapters(subject_id);
 CREATE INDEX IF NOT EXISTS idx_chapters_block   ON chapters(block_id);
+CREATE INDEX IF NOT EXISTS idx_chapters_sort    ON chapters(subject_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_notes_chapter    ON notes(chapter_id);
 CREATE INDEX IF NOT EXISTS idx_notes_block      ON notes(block_id);
 CREATE INDEX IF NOT EXISTS idx_user_blocks_user ON user_blocks(user_id);

@@ -88,15 +88,43 @@ export async function getSubjects() {
   const { data, error } = await supabaseAdmin
     .from("subjects_view")
     .select("*")
+    .order("block_year")
+    .order("block_name")
+    .order("sort_order")
     .order("name");
-  if (error) throw new Error(error.message);
-  return data;
+
+  if (!error) return data;
+
+  // If the view was created before `sort_order` existed, Postgres won't expose it
+  // until the view is recreated (even if the table has the column).
+  if (error.message.includes("sort_order")) {
+    const { data: fallback, error: fallbackError } = await supabaseAdmin
+      .from("subjects_view")
+      .select("*")
+      .order("block_year")
+      .order("block_name")
+      .order("name");
+    if (fallbackError) throw new Error(fallbackError.message);
+    return fallback;
+  }
+
+  throw new Error(error.message);
 }
 
 export async function createSubject(name: string, blockId: string) {
+  // Place new subject at the end of this block
+  const { data: last } = await supabaseAdmin
+    .from("subjects")
+    .select("sort_order")
+    .eq("block_id", blockId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+
+  const nextOrder = (last?.[0]?.sort_order ?? 0) + 1;
+
   const { data, error } = await supabaseAdmin
     .from("subjects")
-    .insert({ name, block_id: blockId })
+    .insert({ name, block_id: blockId, sort_order: nextOrder })
     .select()
     .single();
   if (error) throw new Error(error.message);
@@ -143,15 +171,84 @@ export async function deleteSubject(id: string) {
   revalidatePath("/", "layout");
 }
 
+export async function moveSubject(subjectId: string, direction: "up" | "down") {
+  const { data: subject, error: subjectErr } = await supabaseAdmin
+    .from("subjects")
+    .select("id, block_id, sort_order, name")
+    .eq("id", subjectId)
+    .single();
+  if (subjectErr) throw new Error(subjectErr.message);
+
+  const { data: all, error: listErr } = await supabaseAdmin
+    .from("subjects")
+    .select("id, sort_order, name")
+    .eq("block_id", subject.block_id)
+    .order("sort_order")
+    .order("name");
+  if (listErr) throw new Error(listErr.message);
+
+  const idx = (all ?? []).findIndex((s) => s.id === subjectId);
+  if (idx === -1) return { moved: false };
+
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= (all ?? []).length) return { moved: false };
+
+  const a = all![idx];
+  const b = all![swapIdx];
+
+  const aOrder = a.sort_order ?? 0;
+  const bOrder = b.sort_order ?? 0;
+
+  const { error: updA } = await supabaseAdmin
+    .from("subjects")
+    .update({ sort_order: bOrder })
+    .eq("id", a.id);
+  if (updA) throw new Error(updA.message);
+
+  const { error: updB } = await supabaseAdmin
+    .from("subjects")
+    .update({ sort_order: aOrder })
+    .eq("id", b.id);
+  if (updB) throw new Error(updB.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Subject order changed",
+    course_block: subject.block_id,
+  });
+
+  revalidatePath("/", "layout");
+  return { moved: true };
+}
+
 // ─── CHAPTERS ─────────────────────────────────────────────
 
 export async function getChapters() {
   const { data, error } = await supabaseAdmin
     .from("chapters_view")
     .select("*")
+    .order("block_year")
+    .order("block_name")
+    .order("subject_name")
+    .order("sort_order")
     .order("name");
-  if (error) throw new Error(error.message);
-  return data;
+
+  if (!error) return data;
+
+  // Same `table.*` view expansion issue as subjects_view.
+  if (error.message.includes("sort_order")) {
+    const { data: fallback, error: fallbackError } = await supabaseAdmin
+      .from("chapters_view")
+      .select("*")
+      .order("block_year")
+      .order("block_name")
+      .order("subject_name")
+      .order("name");
+    if (fallbackError) throw new Error(fallbackError.message);
+    return fallback;
+  }
+
+  throw new Error(error.message);
 }
 
 export async function createChapter(
@@ -159,9 +256,24 @@ export async function createChapter(
   subjectId: string,
   blockId: string,
 ) {
+  // Place new chapter at the end of this subject
+  const { data: last } = await supabaseAdmin
+    .from("chapters")
+    .select("sort_order")
+    .eq("subject_id", subjectId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+
+  const nextOrder = (last?.[0]?.sort_order ?? 0) + 1;
+
   const { data, error } = await supabaseAdmin
     .from("chapters")
-    .insert({ name, subject_id: subjectId, block_id: blockId })
+    .insert({
+      name,
+      subject_id: subjectId,
+      block_id: blockId,
+      sort_order: nextOrder,
+    })
     .select()
     .single();
   if (error) throw new Error(error.message);
@@ -211,6 +323,56 @@ export async function deleteChapter(id: string) {
   });
 
   revalidatePath("/", "layout");
+}
+
+export async function moveChapter(chapterId: string, direction: "up" | "down") {
+  const { data: chapter, error: chapErr } = await supabaseAdmin
+    .from("chapters")
+    .select("id, subject_id, sort_order, name")
+    .eq("id", chapterId)
+    .single();
+  if (chapErr) throw new Error(chapErr.message);
+
+  const { data: all, error: listErr } = await supabaseAdmin
+    .from("chapters")
+    .select("id, sort_order, name")
+    .eq("subject_id", chapter.subject_id)
+    .order("sort_order")
+    .order("name");
+  if (listErr) throw new Error(listErr.message);
+
+  const idx = (all ?? []).findIndex((c) => c.id === chapterId);
+  if (idx === -1) return { moved: false };
+
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= (all ?? []).length) return { moved: false };
+
+  const a = all![idx];
+  const b = all![swapIdx];
+
+  const aOrder = a.sort_order ?? 0;
+  const bOrder = b.sort_order ?? 0;
+
+  const { error: updA } = await supabaseAdmin
+    .from("chapters")
+    .update({ sort_order: bOrder })
+    .eq("id", a.id);
+  if (updA) throw new Error(updA.message);
+
+  const { error: updB } = await supabaseAdmin
+    .from("chapters")
+    .update({ sort_order: aOrder })
+    .eq("id", b.id);
+  if (updB) throw new Error(updB.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Chapter order changed",
+    course_block: chapter.subject_id,
+  });
+
+  revalidatePath("/", "layout");
+  return { moved: true };
 }
 
 // ─── NOTES ────────────────────────────────────────────────

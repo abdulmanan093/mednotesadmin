@@ -24,8 +24,18 @@ export async function GET() {
     // Fetch everything in parallel — one round-trip to Supabase
     const [blocksRes, subjectsRes, chaptersRes, notesRes] = await Promise.all([
       supabaseAdmin.from("blocks").select("*").order("year").order("name"),
-      supabaseAdmin.from("subjects").select("*").order("name"),
-      supabaseAdmin.from("chapters").select("*").order("name"),
+      supabaseAdmin
+        .from("subjects")
+        .select("*")
+        .order("block_id")
+        .order("sort_order")
+        .order("name"),
+      supabaseAdmin
+        .from("chapters")
+        .select("*")
+        .order("subject_id")
+        .order("sort_order")
+        .order("name"),
       supabaseAdmin.from("notes").select("*").order("pdf_file_name"),
     ]);
 

@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
         .from("chapters")
         .select("*")
         .eq("subject_id", subjectId)
+        .order("sort_order")
         .order("name"),
       supabaseAdmin
         .from("notes")

@@ -38,6 +38,7 @@ export interface Subject {
   name: string;
   blockId: string;
   blockName: string;
+  sortOrder?: number;
 }
 
 export interface Chapter {
@@ -47,6 +48,7 @@ export interface Chapter {
   subjectName: string;
   blockId: string;
   blockName: string;
+  sortOrder?: number;
 }
 
 export interface Note {

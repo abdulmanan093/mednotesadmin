@@ -1,12 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import type { Subject, SubjectFormData, Block } from "@/types";
 import PageHeader from "@/components/ui/PageHeader";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import Modal from "@/components/ui/Modal";
-import { createSubject, updateSubject, deleteSubject } from "@/lib/actions";
+import {
+  createSubject,
+  updateSubject,
+  deleteSubject,
+  moveSubject,
+} from "@/lib/actions";
 
 const fieldCls =
   "w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors";
@@ -31,6 +36,7 @@ export default function SubjectsClient({
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   const openAdd = () => {
     setForm({ name: "", blockId: blockList[0]?.id ?? "" });
@@ -72,6 +78,7 @@ export default function SubjectsClient({
             name: form.name,
             blockId: form.blockId,
             blockName: block?.name ?? "",
+            sortOrder: created.sort_order ?? 0,
           },
           ...prev,
         ]);
@@ -99,6 +106,65 @@ export default function SubjectsClient({
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.blockName.toLowerCase().includes(search.toLowerCase()),
   );
+
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    // Group by block (stable, predictable), then by sortOrder
+    if (a.blockName !== b.blockName) return a.blockName.localeCompare(b.blockName);
+    const ao = a.sortOrder ?? 0;
+    const bo = b.sortOrder ?? 0;
+    if (ao !== bo) return ao - bo;
+    return a.name.localeCompare(b.name);
+  });
+
+  const getBlockOrdered = (blockId: string) =>
+    subjectList
+      .filter((s) => s.blockId === blockId)
+      .slice()
+      .sort((a, b) => {
+        const ao = a.sortOrder ?? 0;
+        const bo = b.sortOrder ?? 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+      });
+
+  const handleMove = async (subjectId: string, direction: "up" | "down") => {
+    const current = subjectList.find((s) => s.id === subjectId);
+    if (!current) return;
+
+    const ordered = getBlockOrdered(current.blockId);
+    const idx = ordered.findIndex((s) => s.id === subjectId);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= ordered.length) return;
+
+    const neighbor = ordered[swapIdx];
+    if (!neighbor) return;
+
+    // Optimistic swap
+    setSubjectList((prev) =>
+      prev.map((s) => {
+        if (s.id === current.id) return { ...s, sortOrder: neighbor.sortOrder };
+        if (s.id === neighbor.id) return { ...s, sortOrder: current.sortOrder };
+        return s;
+      }),
+    );
+
+    setMovingId(subjectId);
+    try {
+      await moveSubject(subjectId, direction);
+    } catch (err) {
+      console.error(err);
+      // Best-effort rollback
+      setSubjectList((prev) =>
+        prev.map((s) => {
+          if (s.id === current.id) return { ...s, sortOrder: current.sortOrder };
+          if (s.id === neighbor.id) return { ...s, sortOrder: neighbor.sortOrder };
+          return s;
+        }),
+      );
+    } finally {
+      setMovingId(null);
+    }
+  };
 
   return (
     <div>
@@ -141,7 +207,13 @@ export default function SubjectsClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((s) => (
+              {sortedFiltered.map((s) => {
+                const ordered = getBlockOrdered(s.blockId);
+                const idx = ordered.findIndex((x) => x.id === s.id);
+                const canUp = idx > 0;
+                const canDown = idx >= 0 && idx < ordered.length - 1;
+
+                return (
                 <tr
                   key={s.id}
                   className="hover:bg-muted-hover transition-colors"
@@ -162,6 +234,24 @@ export default function SubjectsClient({
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-1">
                       <button
+                        onClick={() => handleMove(s.id, "up")}
+                        disabled={!canUp || movingId === s.id}
+                        className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
+                        title="Move up"
+                        aria-label="Move up"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleMove(s.id, "down")}
+                        disabled={!canDown || movingId === s.id}
+                        className="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 transition-colors"
+                        title="Move down"
+                        aria-label="Move down"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
                         onClick={() => openEdit(s)}
                         className="p-1.5 rounded-md text-muted-foreground hover:bg-primary-light hover:text-primary transition-colors"
                       >
@@ -176,7 +266,8 @@ export default function SubjectsClient({
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {filtered.length === 0 && (
                 <tr>
                   <td

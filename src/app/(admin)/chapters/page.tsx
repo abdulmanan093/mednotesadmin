@@ -17,11 +17,18 @@ export default async function ChaptersPage() {
   }));
 
   const mappedSubjects = subjectsData.map(
-    (s: { id: string; name: string; block_id: string; block_name: string }) => ({
+    (s: {
+      id: string;
+      name: string;
+      block_id: string;
+      block_name: string;
+      sort_order?: number | null;
+    }) => ({
       id: s.id,
       name: s.name,
       blockId: s.block_id,
       blockName: s.block_name,
+      sortOrder: s.sort_order ?? 0,
     })
   );
 
@@ -33,6 +40,7 @@ export default async function ChaptersPage() {
       subject_name: string;
       block_id: string;
       block_name: string;
+      sort_order?: number | null;
     }) => ({
       id: c.id,
       name: c.name,
@@ -40,6 +48,7 @@ export default async function ChaptersPage() {
       subjectName: c.subject_name,
       blockId: c.block_id,
       blockName: c.block_name,
+      sortOrder: c.sort_order ?? 0,
     })
   );
 
