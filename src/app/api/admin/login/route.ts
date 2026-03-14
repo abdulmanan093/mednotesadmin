@@ -1,20 +1,19 @@
 import { NextResponse } from "next/server";
-import crypto from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
 
-const COOKIE_NAME = "mn_admin_session";
-
-function sign(payloadB64: string, secret: string) {
-  return crypto.createHmac("sha256", secret).update(payloadB64).digest("base64url");
-}
+const ACCESS_COOKIE = "mn_admin_access_token";
+const REFRESH_COOKIE = "mn_admin_refresh_token";
 
 export async function POST(request: Request) {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  const sessionSecret = process.env.ADMIN_SESSION_SECRET;
-
-  if (!adminEmail || !adminPassword || !sessionSecret) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
     return NextResponse.json(
-      { ok: false, error: "Server not configured" },
+      {
+        ok: false,
+        error:
+          "Supabase not configured (missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY)",
+      },
       { status: 500 },
     );
   }
@@ -32,26 +31,43 @@ export async function POST(request: Request) {
   const email = (body.email ?? "").trim();
   const password = body.password ?? "";
 
-  if (email !== adminEmail || password !== adminPassword) {
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error || !data.session) {
     return NextResponse.json(
       { ok: false, error: "Invalid credentials" },
       { status: 401 },
     );
   }
 
-  const payloadB64 = Buffer.from(email, "utf8").toString("base64url");
-  const signature = sign(payloadB64, sessionSecret);
-  const token = `${payloadB64}.${signature}`;
-
   const response = NextResponse.json({ ok: true });
+  const maxAge = Math.max(60, (data.session.expires_in ?? 3600) - 30);
+
   response.cookies.set({
-    name: COOKIE_NAME,
-    value: token,
+    name: ACCESS_COOKIE,
+    value: data.session.access_token,
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge,
+  });
+
+  response.cookies.set({
+    name: REFRESH_COOKIE,
+    value: data.session.refresh_token,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
   });
 
   return response;

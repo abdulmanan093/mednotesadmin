@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 
-const COOKIE_NAME = "mn_admin_session";
+const ACCESS_COOKIE = "mn_admin_access_token";
+const REFRESH_COOKIE = "mn_admin_refresh_token";
 
 export async function POST() {
   const response = NextResponse.json({ ok: true });
   response.cookies.set({
-    name: COOKIE_NAME,
+    name: ACCESS_COOKIE,
+    value: "",
+    path: "/",
+    maxAge: 0,
+  });
+  response.cookies.set({
+    name: REFRESH_COOKIE,
     value: "",
     path: "/",
     maxAge: 0,
