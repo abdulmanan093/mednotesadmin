@@ -33,19 +33,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: blocks } = await supabaseAdmin
-      .from("user_blocks")
-      .select("block_id")
-      .eq("user_id", user.id);
+    // Next, parallelize fetching blocks AND fetching the device
+    const [blocksResult, existingDeviceResult] = await Promise.all([
+      supabaseAdmin
+        .from("user_blocks")
+        .select("block_id")
+        .eq("user_id", user.id),
+      device?.model && device?.platform
+        ? supabaseAdmin
+            .from("devices")
+            .select("model, os, platform")
+            .eq("user_id", user.id)
+            .single()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+
+    const blocks = blocksResult.data;
+    const existingDevice = existingDeviceResult.data;
 
     // Check device restriction: if a device is already registered, only allow that same device
     if (device?.model && device?.platform) {
-      const { data: existingDevice } = await supabaseAdmin
-        .from("devices")
-        .select("model, os, platform")
-        .eq("user_id", user.id)
-        .single();
-
       if (existingDevice && existingDevice.model !== device.model) {
         return NextResponse.json(
           {
@@ -56,17 +63,23 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Upsert device info
-      await supabaseAdmin.from("devices").upsert(
-        {
-          user_id: user.id,
-          model: device.model,
-          os: device.os,
-          platform: device.platform,
-          last_seen: new Date().toISOString().split("T")[0],
-        },
-        { onConflict: "user_id" },
-      );
+      // Upsert device info WITHOUT awaiting it, so we don't block the mobile response
+      supabaseAdmin
+        .from("devices")
+        .upsert(
+          {
+            user_id: user.id,
+            model: device.model,
+            os: device.os,
+            platform: device.platform,
+            last_seen: new Date().toISOString().split("T")[0],
+          },
+          { onConflict: "user_id" },
+        )
+        .then(
+          () => {},
+          (err) => console.error("Device upsert error:", err),
+        );
     }
 
     return NextResponse.json({
