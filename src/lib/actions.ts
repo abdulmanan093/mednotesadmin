@@ -1,8 +1,18 @@
 "use server";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { uploadToR2, deleteFromR2 } from "@/lib/r2";
+import { uploadToR2, deleteFromR2, getPresignedPutUrl } from "@/lib/r2";
 import { revalidatePath } from "next/cache";
+
+function formatFileSize(bytes: number) {
+  return bytes < 1024 * 1024
+    ? `${(bytes / 1024).toFixed(0)} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().split("T")[0];
+}
 
 async function safeLogActivity(params: {
   user_name: string;
@@ -433,6 +443,74 @@ export async function uploadNote(formData: FormData) {
   return data;
 }
 
+export async function createNoteUploadUrl(params: {
+  chapterId: string;
+  subjectId: string;
+  blockId: string;
+  fileName: string;
+  fileSizeBytes: number;
+}) {
+  if (
+    !params.chapterId ||
+    !params.subjectId ||
+    !params.blockId ||
+    !params.fileName
+  ) {
+    throw new Error("Missing required fields");
+  }
+
+  const key = `notes/${params.blockId}/${params.subjectId}/${params.chapterId}/${params.fileName}`;
+  const uploadUrl = await getPresignedPutUrl({
+    key,
+    contentType: "application/pdf",
+  });
+
+  return {
+    key,
+    uploadUrl,
+    pdf_file_name: params.fileName,
+    file_size: formatFileSize(params.fileSizeBytes),
+    upload_date: todayIsoDate(),
+  };
+}
+
+export async function finalizeNoteUpload(params: {
+  chapterId: string;
+  subjectId: string;
+  blockId: string;
+  key: string;
+  fileName: string;
+  fileSizeBytes: number;
+}) {
+  if (!params.key || !params.fileName)
+    throw new Error("Missing upload metadata");
+
+  const { data, error } = await supabaseAdmin
+    .from("notes")
+    .insert({
+      chapter_id: params.chapterId,
+      subject_id: params.subjectId,
+      block_id: params.blockId,
+      pdf_file_name: params.fileName,
+      pdf_file_key: params.key,
+      file_size: formatFileSize(params.fileSizeBytes),
+      upload_date: todayIsoDate(),
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Note uploaded",
+    course_block: `${params.blockId} • ${params.fileName}`,
+  });
+
+  revalidatePath("/", "layout");
+  return data;
+}
+
 export async function replaceNote(noteId: string, formData: FormData) {
   const file = formData.get("file") as File;
   if (!file) throw new Error("No file provided");
@@ -479,6 +557,80 @@ export async function replaceNote(noteId: string, formData: FormData) {
     user_name: "Admin",
     action: "Note replaced",
     course_block: `${existing?.block_id ?? ""} • ${file.name}`,
+  });
+
+  revalidatePath("/", "layout");
+  return data;
+}
+
+export async function createReplaceNoteUploadUrl(params: {
+  noteId: string;
+  fileName: string;
+  fileSizeBytes: number;
+}) {
+  if (!params.noteId || !params.fileName)
+    throw new Error("Missing required fields");
+
+  const { data: existing, error } = await supabaseAdmin
+    .from("notes")
+    .select("chapter_id, subject_id, block_id")
+    .eq("id", params.noteId)
+    .single();
+  if (error) throw new Error(error.message);
+
+  const key = `notes/${existing.block_id}/${existing.subject_id}/${existing.chapter_id}/${params.fileName}`;
+  const uploadUrl = await getPresignedPutUrl({
+    key,
+    contentType: "application/pdf",
+  });
+
+  return {
+    key,
+    uploadUrl,
+    pdf_file_name: params.fileName,
+    file_size: formatFileSize(params.fileSizeBytes),
+    upload_date: todayIsoDate(),
+  };
+}
+
+export async function finalizeReplaceNoteUpload(params: {
+  noteId: string;
+  key: string;
+  fileName: string;
+  fileSizeBytes: number;
+}) {
+  const { data: existing } = await supabaseAdmin
+    .from("notes")
+    .select("pdf_file_key, block_id")
+    .eq("id", params.noteId)
+    .single();
+
+  if (existing?.pdf_file_key && existing.pdf_file_key !== params.key) {
+    try {
+      await deleteFromR2(existing.pdf_file_key);
+    } catch {
+      /* ok */
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("notes")
+    .update({
+      pdf_file_name: params.fileName,
+      pdf_file_key: params.key,
+      file_size: formatFileSize(params.fileSizeBytes),
+      upload_date: todayIsoDate(),
+    })
+    .eq("id", params.noteId)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  await safeLogActivity({
+    user_name: "Admin",
+    action: "Note replaced",
+    course_block: `${existing?.block_id ?? ""} • ${params.fileName}`,
   });
 
   revalidatePath("/", "layout");

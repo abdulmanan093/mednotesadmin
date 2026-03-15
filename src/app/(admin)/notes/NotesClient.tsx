@@ -7,7 +7,13 @@ import { formatDate } from "@/lib/utils";
 import PageHeader from "@/components/ui/PageHeader";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import Modal from "@/components/ui/Modal";
-import { uploadNote, replaceNote, deleteNote } from "@/lib/actions";
+import {
+  createNoteUploadUrl,
+  finalizeNoteUpload,
+  createReplaceNoteUploadUrl,
+  finalizeReplaceNoteUpload,
+  deleteNote,
+} from "@/lib/actions";
 
 const fieldCls =
   "w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors";
@@ -61,16 +67,33 @@ export default function NotesClient({
     if (!selectedFile || !form.chapterId) return;
     setUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", selectedFile);
-      fd.append("chapterId", form.chapterId);
-      fd.append("subjectId", form.subjectId);
-      fd.append("blockId", form.blockId);
+      const prep = await createNoteUploadUrl({
+        chapterId: form.chapterId,
+        subjectId: form.subjectId,
+        blockId: form.blockId,
+        fileName: selectedFile.name,
+        fileSizeBytes: selectedFile.size,
+      });
 
-      // We cannot easily do pure optimistic for file uploads because we need the
-      // generated R2 key/URL to view it. But we can show it immediately with a temp state.
-      // For simplicity and correctness with R2, we wait for the server action.
-      const uploadedData = await uploadNote(fd);
+      const putRes = await fetch(prep.uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/pdf",
+        },
+        body: selectedFile,
+      });
+      if (!putRes.ok) {
+        throw new Error(`Upload failed (${putRes.status})`);
+      }
+
+      const uploadedData = await finalizeNoteUpload({
+        chapterId: form.chapterId,
+        subjectId: form.subjectId,
+        blockId: form.blockId,
+        key: prep.key,
+        fileName: selectedFile.name,
+        fileSizeBytes: selectedFile.size,
+      });
 
       const chapter = chapterList.find((c) => c.id === form.chapterId);
       const subject = subjectList.find((s) => s.id === form.subjectId);
@@ -114,10 +137,30 @@ export default function NotesClient({
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
         try {
-          const fd = new FormData();
-          fd.append("file", file);
-          const replacedData = await replaceNote(noteId, fd);
-          
+          const prep = await createReplaceNoteUploadUrl({
+            noteId,
+            fileName: file.name,
+            fileSizeBytes: file.size,
+          });
+
+          const putRes = await fetch(prep.uploadUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/pdf",
+            },
+            body: file,
+          });
+          if (!putRes.ok) {
+            throw new Error(`Upload failed (${putRes.status})`);
+          }
+
+          const replacedData = await finalizeReplaceNoteUpload({
+            noteId,
+            key: prep.key,
+            fileName: file.name,
+            fileSizeBytes: file.size,
+          });
+
           setNoteList((prev) =>
             prev.map((n) =>
               n.id === noteId
@@ -412,7 +455,13 @@ export default function NotesClient({
               disabled={!selectedFile || !form.chapterId || uploading}
               className="flex-1 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
-              {uploading ? "Uploading…" : <><Upload className="h-4 w-4" /> Upload Notes</>}
+              {uploading ? (
+                "Uploading…"
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" /> Upload Notes
+                </>
+              )}
             </button>
             <button
               onClick={() => {

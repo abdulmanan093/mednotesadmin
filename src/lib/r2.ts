@@ -4,6 +4,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const R2 = new S3Client({
   region: "auto",
@@ -30,6 +31,22 @@ export async function uploadToR2(
     }),
   );
   return key;
+}
+
+export async function getPresignedPutUrl(params: {
+  key: string;
+  contentType: string;
+  expiresInSeconds?: number;
+}) {
+  const command = new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: params.key,
+    ContentType: params.contentType,
+  });
+
+  return getSignedUrl(R2, command, {
+    expiresIn: params.expiresInSeconds ?? 60 * 10,
+  });
 }
 
 export async function deleteFromR2(key: string) {
